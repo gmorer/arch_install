@@ -1,9 +1,6 @@
 use crate::internal::*;
 
-pub fn exec_eval(
-    return_code: std::result::Result<std::process::ExitStatus, std::io::Error>,
-    logmsg: &str,
-) {
+pub fn exec_eval(return_code: Result<std::process::ExitStatus, std::io::Error>, logmsg: &str) {
     match &return_code {
         Ok(_) => {
             log::info!("{}", logmsg);
@@ -11,13 +8,13 @@ pub fn exec_eval(
         Err(e) => {
             crash(
                 format!("{}  ERROR: {}", logmsg, e),
-                return_code.unwrap_err().raw_os_error().unwrap(),
+                e.raw_os_error().unwrap(),
             );
         }
     }
 }
 
-pub fn files_eval(return_code: std::result::Result<(), std::io::Error>, logmsg: &str) {
+pub fn files_eval(return_code: Result<(), std::io::Error>, logmsg: &str) {
     match &return_code {
         Ok(_) => {
             log::info!("{}", logmsg);
@@ -25,7 +22,21 @@ pub fn files_eval(return_code: std::result::Result<(), std::io::Error>, logmsg: 
         Err(e) => {
             crash(
                 format!("{} ERROR: {}", logmsg, e),
-                return_code.unwrap_err().raw_os_error().unwrap(),
+                e.raw_os_error().unwrap(),
+            );
+        }
+    }
+}
+
+pub fn os_eval<T>(return_code: Result<T, std::io::Error>, logmsg: &str) {
+    match &return_code {
+        Ok(_) => {
+            log::info!("{}", logmsg);
+        }
+        Err(e) => {
+            crash(
+                format!("{} ERROR: {}", logmsg, e),
+                e.raw_os_error().unwrap(),
             );
         }
     }

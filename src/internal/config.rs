@@ -102,13 +102,7 @@ pub fn read_config(configpath: PathBuf) {
         ));
     }
     let device = PathBuf::from("/dev/").join(config.partition.device.as_str());
-    partition::partition(
-        device,
-        config.partition.mode,
-        config.partition.efi,
-        &mut partitions,
-        config.unakite.enable,
-    );
+    partition::partition(device, config.partition.mode);
     base::install_base_packages(config.kernel);
     base::genfstab();
     println!();

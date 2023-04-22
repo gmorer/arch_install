@@ -65,12 +65,12 @@ pub fn remount(root: &str, oldroot: &str, efi: bool, efidir: &str, bootdev: &str
             exec("umount", vec![String::from(oldroot)]),
             "Unmount old root",
         );
-        mount(root, "/mnt", "");
+        mount(root, "/mnt", None);
         exec_eval(
             exec("mkdir", vec![String::from("-p"), String::from(efidir)]),
             format!("Creating mountpoint {efidir} for {bootdev}").as_str(),
         );
-        mount(bootdev, efidir, "");
+        mount(bootdev, efidir, None);
     } else if efi && !firstrun {
         exec_eval(
             exec("umount", vec![String::from(bootdev)]),
@@ -80,8 +80,8 @@ pub fn remount(root: &str, oldroot: &str, efi: bool, efidir: &str, bootdev: &str
             exec("umount", vec![String::from(root)]),
             "Unmount unakite root",
         );
-        mount(oldroot, "/mnt", "");
-        mount(bootdev, efidir, "");
+        mount(oldroot, "/mnt", None);
+        mount(bootdev, efidir, None);
     } else if !efi && firstrun {
         exec_eval(
             exec("umount", vec![String::from(bootdev)]),
@@ -91,12 +91,12 @@ pub fn remount(root: &str, oldroot: &str, efi: bool, efidir: &str, bootdev: &str
             exec("umount", vec![String::from(oldroot)]),
             "Unmount old root",
         );
-        mount(root, "/mnt", "");
+        mount(root, "/mnt", None);
         exec_eval(
             exec("mkdir", vec![String::from("-p"), String::from("/mnt/boot")]),
             format!("Creating mountpoint /boot for {bootdev}").as_str(),
         );
-        mount(bootdev, "/mnt/boot", "");
+        mount(bootdev, "/mnt/boot", None);
     } else if !efi && !firstrun {
         exec_eval(
             exec("umount", vec![String::from(bootdev)]),
@@ -106,8 +106,8 @@ pub fn remount(root: &str, oldroot: &str, efi: bool, efidir: &str, bootdev: &str
             exec("umount", vec![String::from(root)]),
             "Unmount unakite root",
         );
-        mount(oldroot, "/mnt", "");
-        mount(bootdev, "/mnt/boot", "");
+        mount(oldroot, "/mnt", None);
+        mount(bootdev, "/mnt/boot", None);
     } else {
         panic!("Unknown state");
     }

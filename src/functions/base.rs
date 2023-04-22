@@ -4,6 +4,8 @@ use crate::internal::*;
 use log::warn;
 use std::path::PathBuf;
 
+// TODO: unifed kernel image
+
 pub fn install_base_packages(kernel: String) {
     std::fs::create_dir_all("/mnt/etc").unwrap();
     let kernel_to_install = if kernel.is_empty() {
@@ -216,6 +218,7 @@ pub fn install_flatpak() {
 }
 
 pub fn install_zram() {
+    // TODO: disable swap -> zswap.enabled=0 kernel param
     install(vec!["zram-generator"]);
     files::create_file("/mnt/etc/systemd/zram-generator.conf");
     files_eval(

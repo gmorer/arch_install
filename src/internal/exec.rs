@@ -1,6 +1,9 @@
 use std::process::Command;
 
-pub fn exec(command: &str, args: Vec<String>) -> Result<std::process::ExitStatus, std::io::Error> {
+pub fn exec<T>(command: &str, args: Vec<T>) -> Result<std::process::ExitStatus, std::io::Error>
+where
+    T: AsRef<std::ffi::OsStr>,
+{
     let returncode = Command::new(command).args(args).status();
     returncode
 }
@@ -18,11 +21,14 @@ pub fn exec_chroot(
     returncode
 }
 
-pub fn exec_workdir(
+pub fn exec_workdir<T>(
     command: &str,
     workdir: &str,
-    args: Vec<String>,
-) -> Result<std::process::ExitStatus, std::io::Error> {
+    args: Vec<T>,
+) -> Result<std::process::ExitStatus, std::io::Error>
+where
+    T: AsRef<std::ffi::OsStr>,
+{
     let returncode = Command::new(command)
         .args(args)
         .current_dir(workdir)

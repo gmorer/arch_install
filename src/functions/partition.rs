@@ -1,95 +1,13 @@
-use crate::args;
 use crate::args::PartitionMode;
 use crate::internal::exec::*;
 use crate::internal::*;
 use std::path::{Path, PathBuf};
 
-/*mkfs.bfs mkfs.cramfs mkfs.ext3  mkfs.fat mkfs.msdos  mkfs.xfs
-mkfs.btrfs mkfs.ext2  mkfs.ext4  mkfs.minix mkfs.vfat mkfs.f2fs */
+use files::create_directory as mkdir;
 
-pub fn fmt_mount(mountpoint: &str, filesystem: &str, blockdevice: &str) {
-    match filesystem {
-        "vfat" => exec_eval(
-            exec(
-                "mkfs.vfat",
-                vec![String::from("-F32"), String::from(blockdevice)],
-            ),
-            format!("Formatting {blockdevice} as vfat").as_str(),
-        ),
-        "bfs" => exec_eval(
-            exec("mkfs.bfs", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as bfs").as_str(),
-        ),
-        "cramfs" => exec_eval(
-            exec("mkfs.cramfs", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as cramfs").as_str(),
-        ),
-        "ext3" => exec_eval(
-            exec("mkfs.ext3", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as ext3").as_str(),
-        ),
-        "fat" => exec_eval(
-            exec("mkfs.fat", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as fat").as_str(),
-        ),
-        "msdos" => exec_eval(
-            exec("mkfs.msdos", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as msdos").as_str(),
-        ),
-        "xfs" => exec_eval(
-            exec("mkfs.xfs", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as xfs").as_str(),
-        ),
-        "btrfs" => exec_eval(
-            exec(
-                "mkfs.btrfs",
-                vec![String::from("-f"), String::from(blockdevice)],
-            ),
-            format!("Formatting {blockdevice} as btrfs").as_str(),
-        ),
-        "ext2" => exec_eval(
-            exec("mkfs.ext2", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as ext2").as_str(),
-        ),
-        "ext4" => exec_eval(
-            exec("mkfs.ext4", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as ext4").as_str(),
-        ),
-        "minix" => exec_eval(
-            exec("mkfs.minix", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as minix").as_str(),
-        ),
-        "f2fs" => exec_eval(
-            exec("mkfs.f2fs", vec![String::from(blockdevice)]),
-            format!("Formatting {blockdevice} as f2fs").as_str(),
-        ),
-        "don't format" => {
-            log::debug!("Not formatting {}", blockdevice);
-        }
-        "noformat" => {
-            log::debug!("Not formatting {}", blockdevice);
-        }
-        _ => {
-            crash(
-                format!("Unknown filesystem {filesystem}, used in partition {blockdevice}"),
-                1,
-            );
-        }
-    }
-    exec_eval(
-        exec("mkdir", vec![String::from("-p"), String::from(mountpoint)]),
-        format!("Creating mountpoint {mountpoint} for {blockdevice}").as_str(),
-    );
-    mount(blockdevice, mountpoint, "");
-}
+// TODO: encryption :D
 
-pub fn partition(
-    device: PathBuf,
-    mode: PartitionMode,
-    efi: bool,
-    partitions: &mut Vec<args::Partition>,
-    unakite: bool,
-) {
+pub fn partition(device: PathBuf, mode: PartitionMode) {
     println!("{:?}", mode);
     match mode {
         PartitionMode::Auto => {
@@ -97,640 +15,130 @@ pub fn partition(
                 crash(format!("The device {device:?} doesn't exist"), 1);
             }
             log::debug!("automatically partitioning {device:?}");
-            if efi {
-                partition_with_efi(&device, unakite);
-            } else {
-                partition_no_efi(&device, unakite);
-            }
-            if device.to_string_lossy().contains("nvme")
-                || device.to_string_lossy().contains("mmcblk")
-            {
-                part_nvme(&device, efi, unakite);
-            } else {
-                part_disk(&device, efi, unakite);
-            }
+            partition_with_efi(&device);
+            part(&device);
         }
         PartitionMode::Manual => {
             log::debug!("Manual partitioning");
-            partitions.sort_by(|a, b| a.mountpoint.len().cmp(&b.mountpoint.len()));
-            for i in 0..partitions.len() {
-                println!("{:?}", partitions);
-                println!("{}", partitions.len());
-                println!("{}", &partitions[i].mountpoint);
-                println!("{}", &partitions[i].filesystem);
-                println!("{}", &partitions[i].blockdevice);
-                fmt_mount(
-                    &partitions[i].mountpoint,
-                    &partitions[i].filesystem,
-                    &partitions[i].blockdevice,
-                );
-            }
+            println!("Just do it manually then...")
         }
     }
 }
 
-fn partition_no_efi(device: &Path, unakite: bool) {
+fn partition_with_efi(device: &Path) {
     let device = device.to_string_lossy().to_string();
-    exec_eval(
-        exec(
-            "parted",
-            vec![
-                String::from("-s"),
-                String::from(&device),
-                String::from("mklabel"),
-                String::from("msdos"),
-            ],
-        ),
-        format!("Create msdos label on {}", device).as_str(),
-    );
-    exec_eval(
-        exec(
-            "parted",
-            vec![
-                String::from("-s"),
-                String::from(&device),
-                String::from("mkpart"),
-                String::from("primary"),
-                String::from("ext4"),
-                String::from("1MIB"),
-                String::from("512MIB"),
-            ],
-        ),
-        "create bios boot partition",
-    );
-    if unakite {
-        exec_eval(
-            exec(
-                "parted",
-                vec![
-                    String::from("-s"),
-                    String::from(&device),
-                    String::from("mkpart"),
-                    String::from("primary"),
-                    String::from("btrfs"),
-                    String::from("512MIB"),
-                    String::from("10048MIB"),
-                ],
-            ),
-            "create btrfs Unakite root partition",
-        );
-        exec_eval(
-            exec(
-                "parted",
-                vec![
-                    String::from("-s"),
-                    device,
-                    String::from("mkpart"),
-                    String::from("primary"),
-                    String::from("btrfs"),
-                    String::from("10048MIB"),
-                    String::from("100%"),
-                ],
-            ),
-            "create btrfs Crystal root partition",
-        );
-    } else {
-        exec_eval(
-            exec(
-                "parted",
-                vec![
-                    String::from("-s"),
-                    device,
-                    String::from("mkpart"),
-                    String::from("primary"),
-                    String::from("btrfs"),
-                    String::from("512MIB"),
-                    String::from("100%"),
-                ],
-            ),
-            "create btrfs root partition",
-        );
-    }
-}
-
-fn partition_with_efi(device: &Path, unakite: bool) {
-    let device = device.to_string_lossy().to_string();
-    exec_eval(
-        exec(
-            "parted",
-            vec![
-                String::from("-s"),
-                String::from(&device),
-                String::from("mklabel"),
-                String::from("gpt"),
-            ],
-        ),
+    os_eval(
+        exec("parted", vec!["-s", &device, "mklabel", "gpt"]),
         format!("create gpt label on {}", &device).as_str(),
     );
-    exec_eval(
+    // TODO: encryption
+    // cryptsetup lukSformat
+    // cryptsetup open
+    os_eval(
         exec(
             "parted",
-            vec![
-                String::from("-s"),
-                String::from(&device),
-                String::from("mkpart"),
-                String::from("fat32"),
-                String::from("0"),
-                String::from("300"),
-            ],
+            vec!["-s", &device, "mkpart", "fat32", "0", "1GiB"],
         ),
         "create EFI partition",
     );
-    if unakite {
-        exec_eval(
-            exec(
-                "parted",
-                vec![
-                    String::from("-s"),
-                    String::from(&device),
-                    String::from("mkpart"),
-                    String::from("primary"),
-                    String::from("btrfs"),
-                    String::from("512MIB"),
-                    String::from("10048MIB"),
-                ],
-            ),
-            "create btrfs Unakite root partition",
-        );
-        exec_eval(
-            exec(
-                "parted",
-                vec![
-                    String::from("-s"),
-                    device,
-                    String::from("mkpart"),
-                    String::from("primary"),
-                    String::from("btrfs"),
-                    String::from("10048MIB"),
-                    String::from("100%"),
-                ],
-            ),
-            "create btrfs Crystal root partition",
-        );
-    } else {
-        exec_eval(
-            exec(
-                "parted",
-                vec![
-                    String::from("-s"),
-                    device,
-                    String::from("mkpart"),
-                    String::from("primary"),
-                    String::from("btrfs"),
-                    String::from("512MIB"),
-                    String::from("100%"),
-                ],
-            ),
-            "create btrfs root partition",
-        );
-    }
+    os_eval(
+        exec(
+            "parted",
+            vec!["-s", &device, "mkpart", "primary", "btrfs", "1GiB", "100%"],
+        ),
+        "create btrfs root partition",
+    );
 }
 
-fn part_nvme(device: &Path, efi: bool, unakite: bool) {
-    let device = device.to_string_lossy().to_string();
-    if efi && !unakite {
-        exec_eval(
-            exec(
-                "mkfs.vfat",
-                vec![String::from("-F32"), format!("{}p1", device)],
-            ),
-            format!("format {}p1 as fat32", device).as_str(),
-        );
-        exec_eval(
-            exec(
-                "mkfs.btrfs",
-                vec!["-f".to_string(), format!("{}p2", device)],
-            ),
-            format!("format {}p2 as btrfs", device).as_str(),
-        );
-        mount(format!("{}p2", device).as_str(), "/mnt", "");
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@"),
-                ],
-            ),
-            "Create btrfs subvolume @",
-        );
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@home"),
-                ],
-            ),
-            "Create btrfs subvolume @home",
-        );
-        umount("/mnt");
-        mount(format!("{}p2", device).as_str(), "/mnt/", "subvol=@");
-        files_eval(files::create_directory("/mnt/boot"), "create /mnt/boot");
-        files_eval(
-            files::create_directory("/mnt/boot/efi"),
-            "create /mnt/boot/efi",
-        );
-        files_eval(files::create_directory("/mnt/home"), "create /mnt/home");
-        mount(
-            format!("{}p2", device).as_str(),
-            "/mnt/home",
-            "subvol=@home",
-        );
-        mount(format!("{}p1", device).as_str(), "/mnt/boot/efi", "");
-    } else if !efi && !unakite {
-        exec_eval(
-            exec("mkfs.ext4", vec![format!("{}p1", device)]),
-            format!("format {}p1 as ext4", device).as_str(),
-        );
-        exec_eval(
-            exec(
-                "mkfs.btrfs",
-                vec!["-f".to_string(), format!("{}p2", device)],
-            ),
-            format!("format {}p2 as btrfs", device).as_str(),
-        );
-        mount(format!("{}p2", device).as_str(), "/mnt/", "");
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@"),
-                ],
-            ),
-            "Create btrfs subvolume @",
-        );
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@home"),
-                ],
-            ),
-            "Create btrfs subvolume @home",
-        );
-        umount("/mnt");
-        mount(format!("{}p2", device).as_str(), "/mnt/", "subvol=@");
-        files_eval(files::create_directory("/mnt/boot"), "create /mnt/boot");
-        files_eval(files::create_directory("/mnt/home"), "create /mnt/home");
-        mount(
-            format!("{}p2", device).as_str(),
-            "/mnt/home",
-            "subvol=@home",
-        );
-        mount(format!("{}p1", device).as_str(), "/mnt/boot", "");
-    } else if efi && unakite {
-        exec_eval(
-            exec(
-                "mkfs.vfat",
-                vec![String::from("-F32"), format!("{}p1", device)],
-            ),
-            format!("format {}p1 as fat32", device).as_str(),
-        );
-        exec_eval(
-            exec(
-                "mkfs.btrfs",
-                vec!["-f".to_string(), format!("{}p2", device)],
-            ),
-            format!("format {}p2 as btrfs", device).as_str(),
-        );
-        exec_eval(
-            exec(
-                "mkfs.btrfs",
-                vec!["-f".to_string(), format!("{}p3", device)],
-            ),
-            format!("format {}p3 as btrfs", device).as_str(),
-        );
-        mount(format!("{}p3", device).as_str(), "/mnt", "");
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@"),
-                ],
-            ),
-            "Create btrfs subvolume @",
-        );
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@home"),
-                ],
-            ),
-            "Create btrfs subvolume @home",
-        );
-        umount("/mnt");
-        mount(format!("{}p3", device).as_str(), "/mnt/", "subvol=@");
-        files_eval(files::create_directory("/mnt/boot"), "create /mnt/boot");
-        files_eval(
-            files::create_directory("/mnt/boot/efi"),
-            "create /mnt/boot/efi",
-        );
-        files_eval(files::create_directory("/mnt/home"), "create /mnt/home");
-        mount(
-            format!("{}p3", device).as_str(),
-            "/mnt/home",
-            "subvol=@home",
-        );
-        mount(format!("{}p1", device).as_str(), "/mnt/boot/efi", "");
-    } else if !efi && unakite {
-        exec_eval(
-            exec("mkfs.ext4", vec![format!("{}p1", device)]),
-            format!("format {}p1 as ext4", device).as_str(),
-        );
-        exec_eval(
-            exec(
-                "mkfs.btrfs",
-                vec!["-f".to_string(), format!("{}p2", device)],
-            ),
-            format!("format {}p2 as btrfs", device).as_str(),
-        );
-        mount(format!("{}p2", device).as_str(), "/mnt/", "");
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@"),
-                ],
-            ),
-            "Create btrfs subvolume @",
-        );
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@home"),
-                ],
-            ),
-            "Create btrfs subvolume @home",
-        );
-        umount("/mnt");
-        mount(format!("{}p2", device).as_str(), "/mnt/", "subvol=@");
-        files_eval(files::create_directory("/mnt/boot"), "create /mnt/boot");
-        files_eval(files::create_directory("/mnt/home"), "create /mnt/home");
-        mount(
-            format!("{}p2", device).as_str(),
-            "/mnt/home",
-            "subvol=@home",
-        );
-        mount(format!("{}p1", device).as_str(), "/mnt/boot", "");
-    }
+fn mount_btrfs_su(subvol: &str, device: &str, path: &str) {
+    let btrfs_mount_opt = "rw,noatime,compress-force=zstd:3";
+    let options = format!("{},subvol={}", btrfs_mount_opt, subvol);
+    exec_eval(
+        exec("btrfs", vec!["-t", "btrfs", "-o", &options, device, path]),
+        &format!(
+            "Create btrfs subvolume {} from {} to {}",
+            subvol, device, path
+        ),
+    );
 }
 
-fn part_disk(device: &Path, efi: bool, unakite: bool) {
-    let device = device.to_string_lossy().to_string();
-    if efi && !unakite {
-        exec_eval(
-            exec(
-                "mkfs.vfat",
-                vec![String::from("-F32"), format!("{}1", device)],
-            ),
-            format!("format {}1 as fat32", device).as_str(),
-        );
-        exec_eval(
-            exec("mkfs.btrfs", vec!["-f".to_string(), format!("{}2", device)]),
-            format!("format {}2 as btrfs", device).as_str(),
-        );
-        mount(format!("{}2", device).as_str(), "/mnt", "");
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@"),
-                ],
-            ),
-            "Create btrfs subvolume @",
-        );
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@home"),
-                ],
-            ),
-            "Create btrfs subvolume @home",
-        );
-        umount("/mnt");
-        mount(format!("{}2", device).as_str(), "/mnt/", "subvol=@");
-        files_eval(files::create_directory("/mnt/boot"), "create /mnt/boot");
-        files_eval(
-            files::create_directory("/mnt/boot/efi"),
-            "create /mnt/boot/efi",
-        );
-        files_eval(files::create_directory("/mnt/home"), "create /mnt/home");
-        mount(format!("{}2", device).as_str(), "/mnt/home", "subvol=@home");
-        mount(format!("{}1", device).as_str(), "/mnt/boot/efi", "");
-    } else if !efi && !unakite {
-        exec_eval(
-            exec("mkfs.ext4", vec![format!("{}1", device)]),
-            format!("format {}1 as ext4", device).as_str(),
-        );
-        exec_eval(
-            exec("mkfs.btrfs", vec!["-f".to_string(), format!("{}2", device)]),
-            format!("format {}2 as btrfs", device).as_str(),
-        );
-        mount(format!("{}2", device).as_str(), "/mnt/", "");
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@"),
-                ],
-            ),
-            "Create btrfs subvolume @",
-        );
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@home"),
-                ],
-            ),
-            "create btrfs subvolume @home",
-        );
-        umount("/mnt");
-        mount(format!("{}2", device).as_str(), "/mnt/", "subvol=@");
-        files_eval(
-            files::create_directory("/mnt/boot"),
-            "create directory /mnt/boot",
-        );
-        files_eval(
-            files::create_directory("/mnt/home"),
-            "create directory /mnt/home",
-        );
-        mount(format!("{}2", device).as_str(), "/mnt/home", "subvol=@home");
-        mount(format!("{}1", device).as_str(), "/mnt/boot", "");
-    } else if efi && unakite {
-        exec_eval(
-            exec(
-                "mkfs.vfat",
-                vec![String::from("-F32"), format!("{}1", device)],
-            ),
-            format!("format {}1 as fat32", device).as_str(),
-        );
-        exec_eval(
-            exec("mkfs.btrfs", vec!["-f".to_string(), format!("{}2", device)]),
-            format!("format {}2 as btrfs", device).as_str(),
-        );
-        exec_eval(
-            exec("mkfs.btrfs", vec!["-f".to_string(), format!("{}3", device)]),
-            format!("format {}3 as btrfs", device).as_str(),
-        );
-        mount(format!("{}3", device).as_str(), "/mnt", "");
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@"),
-                ],
-            ),
-            "Create btrfs subvolume @",
-        );
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@home"),
-                ],
-            ),
-            "Create btrfs subvolume @home",
-        );
-        umount("/mnt");
-        mount(format!("{}3", device).as_str(), "/mnt/", "subvol=@");
-        files_eval(files::create_directory("/mnt/boot"), "create /mnt/boot");
-        files_eval(
-            files::create_directory("/mnt/boot/efi"),
-            "create /mnt/boot/efi",
-        );
-        files_eval(files::create_directory("/mnt/home"), "create /mnt/home");
-        mount(format!("{}3", device).as_str(), "/mnt/home", "subvol=@home");
-        mount(format!("{}1", device).as_str(), "/mnt/boot/efi", "");
-    } else if !efi && unakite {
-        exec_eval(
-            exec("mkfs.ext4", vec![format!("{}1", device)]),
-            format!("format {}1 as ext4", device).as_str(),
-        );
-        exec_eval(
-            exec("mkfs.btrfs", vec!["-f".to_string(), format!("{}2", device)]),
-            format!("format {}2 as btrfs", device).as_str(),
-        );
-        exec_eval(
-            exec("mkfs.btrfs", vec!["-f".to_string(), format!("{}3", device)]),
-            format!("format {}3 as btrfs", device).as_str(),
-        );
-        mount(format!("{}3", device).as_str(), "/mnt/", "");
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@"),
-                ],
-            ),
-            "Create btrfs subvolume @",
-        );
-        exec_eval(
-            exec_workdir(
-                "btrfs",
-                "/mnt",
-                vec![
-                    String::from("subvolume"),
-                    String::from("create"),
-                    String::from("@home"),
-                ],
-            ),
-            "create btrfs subvolume @home",
-        );
-        umount("/mnt");
-        mount(format!("{}3", device).as_str(), "/mnt/", "subvol=@");
-        files_eval(
-            files::create_directory("/mnt/boot"),
-            "create directory /mnt/boot",
-        );
-        files_eval(
-            files::create_directory("/mnt/home"),
-            "create directory /mnt/home",
-        );
-        mount(format!("{}3", device).as_str(), "/mnt/home", "subvol=@home");
-        mount(format!("{}1", device).as_str(), "/mnt/boot", "");
-    }
+fn create_btrfs_su(mountpoint: &str) {
+    os_eval(
+        exec("btrfs", vec!["subvolume", "create", mountpoint]),
+        &format!("Create btrfs subvolume {}", mountpoint),
+    );
 }
 
-pub fn mount(partition: &str, mountpoint: &str, options: &str) {
-    if !options.is_empty() {
-        exec_eval(
-            exec(
-                "mount",
-                vec![
-                    String::from(partition),
-                    String::from(mountpoint),
-                    String::from("-o"),
-                    String::from(options),
-                ],
-            ),
-            format!(
-                "mount {} with options {} at {}",
-                partition, options, mountpoint
-            )
-            .as_str(),
-        );
-    } else {
-        exec_eval(
-            exec(
-                "mount",
-                vec![String::from(partition), String::from(mountpoint)],
-            ),
-            format!("mount {} with no options at {}", partition, mountpoint).as_str(),
-        );
+fn part(device: &Path) {
+	let device = device.to_string_lossy().to_string();
+    let boot = format!("{}p1", device);
+    let btrfs = format!("{}p2", device);
+    // Boot partition
+    os_eval(
+        exec("mkfs.vfat", vec!["-F32", &boot]),
+        &format!("format {} as fat32", boot),
+    );
+    // /
+    os_eval(
+        exec("mkfs.btrfs", vec!["-f", &btrfs]),
+        &format!("format {} as btrfs", btrfs),
+    );
+
+    let subvs = vec![
+        ("@", "/"),
+        ("@home", "/home"),
+        ("@snapshots", "/.snapshots"),
+        ("@var_log", "/var/log"),
+        ("@var_pkgs", "/var/cache/pacman/pkgs"),
+        ("@swap", "/swap"),
+    ];
+
+    mount(&btrfs, "/mnt", None);
+    for (label, _) in &subvs {
+        create_btrfs_su(&format!("/mnt/{}", label));
     }
+
+    umount("/mnt");
+
+    mount_btrfs_su("@", &btrfs, "/mnt");
+    for (label, path) in subvs.iter().skip(1) {
+        let mounted_path = format!("/mnt{}", path);
+        os_eval(mkdir(&mounted_path), &format!("create {}", mounted_path));
+        mount_btrfs_su(label, &btrfs, &mounted_path);
+    }
+
+    // Since 6.1 :D
+    let swapfile = "/mnt/swap/swapfile";
+    os_eval(
+        exec(
+            "btrfs",
+            vec!["filesystem", "mkswapfile", "--size", "8G", swapfile],
+        ),
+        &format!("Creating the swap file {}", swapfile),
+    );
+    os_eval(
+        exec("swapon", vec![swapfile]),
+        &format!("swapon {}", swapfile),
+    );
+
+    os_eval(mkdir("/mnt/boot/efi"), "create /mnt/boot/efi");
+    mount(&boot, "/mnt/boot/efi", None);
+}
+
+pub fn mount(partition: &str, mountpoint: &str, options: Option<&str>) {
+    let args = match options {
+        Some(options) => vec![partition, mountpoint, "-o", options],
+        None => vec![partition, mountpoint],
+    };
+    os_eval(
+        exec("mount", args),
+        &format!("mount {} with no options at {}", partition, mountpoint),
+    );
 }
 
 pub fn umount(mountpoint: &str) {
-    exec_eval(
-        exec("umount", vec![String::from(mountpoint)]),
-        format!("unmount {}", mountpoint).as_str(),
+    os_eval(
+        exec("umount", vec!["-R", mountpoint]),
+        &format!("unmount {}", mountpoint),
     );
 }

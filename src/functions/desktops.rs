@@ -1,3 +1,4 @@
+/*
 use crate::args::DesktopSetup;
 use crate::internal::exec::*;
 use crate::internal::*;
@@ -366,3 +367,4 @@ fn enable_dm(dm: &str) {
         format!("Enable {}", dm).as_str(),
     );
 }
+*/

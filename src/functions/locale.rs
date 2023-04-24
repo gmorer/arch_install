@@ -1,25 +1,24 @@
 use crate::internal::exec::*;
 use crate::internal::*;
 
-pub fn set_timezone(timezone: &str) {
-    exec_eval(
-        exec_chroot(
+pub fn set_timezone() {
+    //TODO: -> curl -s http://ip-api.com/line?fields=timezone
+    let timezone = "Europe/Paris";
+    os_eval(
+        exe_chroot!(
             "ln",
-            vec![
-                "-sf".to_string(),
-                format!("/usr/share/zoneinfo/{}", timezone),
-                "/etc/localtime".to_string(),
-            ],
+            "-sf",
+            &format!("/usr/share/zoneinfo/{}", timezone),
+            "/etc/localtime",
         ),
         "Set timezone",
     );
-    exec_eval(
-        exec_chroot("hwclock", vec!["--systohc".to_string()]),
-        "Set system clock",
-    );
+    exec_eval(exe_chroot!("hwclock", "--systohc"), "Set system clock");
 }
 
-pub fn set_locale(locale: String) {
+pub fn set_locale() {
+    // TODO
+    let locale = "en_US.UTF-8 UTF-8";
     files_eval(
         files::append_file("/mnt/etc/locale.gen", "en_US.UTF-8 UTF-8"),
         "add en_US.UTF-8 UTF-8 to locale.gen",
@@ -56,16 +55,13 @@ pub fn set_locale(locale: String) {
             );
         }
     }
-    exec_eval(exec_chroot("locale-gen", vec![]), "generate locales");
+    exec_eval(exe_chroot!("locale-gen"), "generate locales");
 }
 
-pub fn set_keyboard(keyboard: &str) {
+pub fn set_keyboard() {
     files::create_file("/mnt/etc/vconsole.conf");
     files_eval(
-        files::append_file(
-            "/mnt/etc/vconsole.conf",
-            format!("KEYMAP={}", keyboard).as_str(),
-        ),
-        "set keyboard layout",
+        files::append_file("/mnt/etc/vconsole.conf", "KEYMAP=us"),
+        "set keyboard layout to us",
     );
 }

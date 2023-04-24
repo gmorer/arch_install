@@ -1,8 +1,8 @@
 [package]
 name = "jade"
-description = "The new installer for crystal linux, contains backend and TUI"
-authors = ["Amy <axtlos@getcryst.al>"]
-version = "1.2.7"
+description = "Basic archlinux instaler"
+authors = ["Amy <axtlos@getcryst.al>", "gmorer <gmorer@pm.me>"]
+version = "2.0.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -19,3 +19,4 @@ log = "0.4.16"
 flexi_logger = {version = "0.22.3", features = ["colors"] }
 lazy_static = "1.4.0"
 human-panic = "1.0.3"
+rpassword = "7.2"

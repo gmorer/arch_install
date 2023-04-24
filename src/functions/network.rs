@@ -1,6 +1,8 @@
 use crate::internal::*;
 
-pub fn set_hostname(hostname: &str) {
+pub fn set_hostname() {
+    // TODO: ask the user
+    let hostname = "lol";
     println!("Setting hostname to {}", hostname);
     files::create_file("/mnt/etc/hostname");
     files_eval(

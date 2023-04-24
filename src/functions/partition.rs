@@ -1,61 +1,90 @@
-use crate::args::PartitionMode;
-use crate::internal::exec::*;
+use crate::internal::exec::{exe, exe_io, exec};
 use crate::internal::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use files::create_directory as mkdir;
 
 // TODO: encryption :D
 
-pub fn partition(device: PathBuf, mode: PartitionMode) {
-    println!("{:?}", mode);
-    match mode {
-        PartitionMode::Auto => {
-            if !device.exists() {
-                crash(format!("The device {device:?} doesn't exist"), 1);
-            }
-            log::debug!("automatically partitioning {device:?}");
-            partition_with_efi(&device);
-            part(&device);
-        }
-        PartitionMode::Manual => {
-            log::debug!("Manual partitioning");
-            println!("Just do it manually then...")
-        }
+// Disk:
+// GPT: [ boot: fat32 1GiB ] [ LUKS2 1Gib..100% ]
+// Luks2: [ Btrfs ]
+// Btrfs: [ [ @ ] [ @home ][ @snapshots ][ @var_log ][ @var_pkgs ][ @swap ] ]
+
+pub fn partition() {
+    // TODO: user input
+    let device = "".to_string();
+    if !PathBuf::from(&device).exists() {
+        crash(format!("The device {device:?} doesn't exist"), 1);
     }
+    log::debug!("automatically partitioning {device:?}");
+    let (esp, cryptroot) = create_table(device);
+    let root = create_luks(&cryptroot);
+    part(esp, root);
 }
 
-fn partition_with_efi(device: &Path) {
-    let device = device.to_string_lossy().to_string();
+fn create_table(device: String) -> (String /* esp */, String /* cryptroot */) {
+    let esp_label = "ESP";
+    let cryptroot_label = "CRYPTROOT";
     os_eval(
-        exec("parted", vec!["-s", &device, "mklabel", "gpt"]),
-        format!("create gpt label on {}", &device).as_str(),
-    );
-    // TODO: encryption
-    // cryptsetup lukSformat
-    // cryptsetup open
-    os_eval(
-        exec(
+        exe!(
             "parted",
-            vec!["-s", &device, "mkpart", "fat32", "0", "1GiB"],
+            "-s",
+            &device,
+            /* Create GPT */
+            "mklabel",
+            "gpt",
+            /* Create boot partition */
+            "mkpart",
+            esp_label,
+            "fat32",
+            "0",
+            "1GiB",
+            /* set esp=on flag on partition 1 */
+            "set",
+            "1",
+            "esp",
+            "on",
+            /* create luks partition */
+            "mkpart",
+            cryptroot_label,
+            "1GiB",
+            "100%"
         ),
-        "create EFI partition",
+        format!("Creating the GPT table"),
     );
     os_eval(
-        exec(
-            "parted",
-            vec!["-s", &device, "mkpart", "primary", "btrfs", "1GiB", "100%"],
-        ),
-        "create btrfs root partition",
+        exe!("partprobe", device),
+        "Informing the kernel about disk changes",
     );
+    (
+        format!("/dev/disk/by-partlabel/{}", esp_label),
+        format!("/dev/disk/by-partlabel/{}", cryptroot_label),
+    )
+}
+
+fn create_luks(cryptroot: &str) -> String {
+    let container_name = "root";
+    println!("Enter password to create the encrypted container:");
+    os_eval(
+        // Using default options, should be ok
+        exe_io!("cryptsetup", "luksFormat", cryptroot),
+        "Creating the luks2 container for root",
+    );
+    println!("Enter password to enter the encrypted container (same as before):");
+    os_eval(
+        exe_io!("cryptsetup", "open", cryptroot, container_name),
+        "Opening the luks2 container for root",
+    );
+    format!("/dev/mapper/{}", container_name)
 }
 
 fn mount_btrfs_su(subvol: &str, device: &str, path: &str) {
     let btrfs_mount_opt = "rw,noatime,compress-force=zstd:3";
     let options = format!("{},subvol={}", btrfs_mount_opt, subvol);
     exec_eval(
-        exec("btrfs", vec!["-t", "btrfs", "-o", &options, device, path]),
-        &format!(
+        exe!("btrfs", "-t", "btrfs", "-o", &options, device, path),
+        format!(
             "Create btrfs subvolume {} from {} to {}",
             subvol, device, path
         ),
@@ -64,24 +93,21 @@ fn mount_btrfs_su(subvol: &str, device: &str, path: &str) {
 
 fn create_btrfs_su(mountpoint: &str) {
     os_eval(
-        exec("btrfs", vec!["subvolume", "create", mountpoint]),
-        &format!("Create btrfs subvolume {}", mountpoint),
+        exe!("btrfs", "subvolume", "create", mountpoint),
+        format!("Create btrfs subvolume {}", mountpoint),
     );
 }
 
-fn part(device: &Path) {
-	let device = device.to_string_lossy().to_string();
-    let boot = format!("{}p1", device);
-    let btrfs = format!("{}p2", device);
+fn part(boot: String, btrfs: String) {
     // Boot partition
     os_eval(
-        exec("mkfs.vfat", vec!["-F32", &boot]),
-        &format!("format {} as fat32", boot),
+        exe!("mkfs.vfat", "-F32", &boot),
+        format!("format {} as fat32", boot),
     );
     // /
     os_eval(
-        exec("mkfs.btrfs", vec!["-f", &btrfs]),
-        &format!("format {} as btrfs", btrfs),
+        exe!("mkfs.btrfs", "-f", &btrfs),
+        format!("format {} as btrfs", btrfs),
     );
 
     let subvs = vec![
@@ -103,23 +129,24 @@ fn part(device: &Path) {
     mount_btrfs_su("@", &btrfs, "/mnt");
     for (label, path) in subvs.iter().skip(1) {
         let mounted_path = format!("/mnt{}", path);
-        os_eval(mkdir(&mounted_path), &format!("create {}", mounted_path));
+        os_eval(mkdir(&mounted_path), format!("create {}", mounted_path));
         mount_btrfs_su(label, &btrfs, &mounted_path);
     }
 
     // Since 6.1 :D
     let swapfile = "/mnt/swap/swapfile";
     os_eval(
-        exec(
+        exe!(
             "btrfs",
-            vec!["filesystem", "mkswapfile", "--size", "8G", swapfile],
+            "filesystem",
+            "mkswapfile",
+            "--size",
+            "8G",
+            swapfile
         ),
-        &format!("Creating the swap file {}", swapfile),
+        format!("Creating the swap file {}", swapfile),
     );
-    os_eval(
-        exec("swapon", vec![swapfile]),
-        &format!("swapon {}", swapfile),
-    );
+    os_eval(exe!("swapon", swapfile), format!("swapon {}", swapfile));
 
     os_eval(mkdir("/mnt/boot/efi"), "create /mnt/boot/efi");
     mount(&boot, "/mnt/boot/efi", None);
@@ -132,13 +159,13 @@ pub fn mount(partition: &str, mountpoint: &str, options: Option<&str>) {
     };
     os_eval(
         exec("mount", args),
-        &format!("mount {} with no options at {}", partition, mountpoint),
+        format!("mount {} with no options at {}", partition, mountpoint),
     );
 }
 
 pub fn umount(mountpoint: &str) {
     os_eval(
-        exec("umount", vec!["-R", mountpoint]),
-        &format!("unmount {}", mountpoint),
+        exe!("umount", "-R", mountpoint),
+        format!("unmount {}", mountpoint),
     );
 }

@@ -16,9 +16,9 @@ fn main() {
     // pacstrap
     base::config_pacman();
     base::install_base_packages();
-    base::genfstab();
-    base::install_zram();
     // fstab
+    base::genfstab();
+    linux::install_zram();
     // locals
     locale::set_locale();
     locale::set_keyboard();

@@ -39,14 +39,16 @@ pub fn install_base_packages() {
     // TODO: microcode
     std::fs::create_dir_all("/mnt/etc").unwrap();
     let kernel_to_install = "linux-hardened";
-    install::install(vec![
+    install(vec![
         // Base Arch
         "base",
         kernel_to_install,
-        format!("{kernel_to_install}-headers").as_str(),
+        &format!("{}-headers", kernel_to_install),
         "archlinux-keyring",
+        "zram-generator",
         "linux-firmware",
         "systemd-sysvcompat",
+        "bubblewrap-suid",
         "bootctl",
         "networkmanager",
         "man-db",
@@ -78,16 +80,14 @@ pub fn genfstab() {
 }
 
 pub fn install_bootloader() {
-    exe_chroot!("bootctl", "install");
+    // Custom hook to update bootloader
+    exe_chroot!("bootctl", "--path=/boot", "install");
 }
 
-// TODO: move to linux.rs
-pub fn install_zram() {
-    // TODO: disable swap -> zswap.enabled=0 kernel param
-    install(vec!["zram-generator"]);
-    files::create_file("/mnt/etc/systemd/zram-generator.conf");
-    files_eval(
-        files::append_file("/mnt/etc/systemd/zram-generator.conf", "[zram0]"),
-        "Write zram-generator config",
-    );
+pub fn install_paru() {
+    /*
+        git clone https://aur.archlinux.org/packages/paru/
+    cd paru
+    makepkg -si PKGBUILD
+    */
 }

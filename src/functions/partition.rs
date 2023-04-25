@@ -132,6 +132,9 @@ fn part(boot: String, btrfs: String) {
         os_eval(mkdir(&mounted_path), format!("create {}", mounted_path));
         mount_btrfs_su(label, &btrfs, &mounted_path);
     }
+    // TODO:
+    // make / default
+	// btrfs subvolume set-default subvolume-id /
 
     // Since 6.1 :D
     let swapfile = "/mnt/swap/swapfile";

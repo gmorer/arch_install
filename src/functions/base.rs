@@ -1,16 +1,36 @@
+use std::fs;
+use std::process::Command;
 use crate::internal::exec::*;
 use crate::internal::files::append_file;
 use crate::internal::*;
 
+fn install(pkgs: Vec<&str>) {
+    os_eval(
+        Command::new("pacstrap").arg("/mnt").arg("-K").args(&pkgs).status(),
+        format!("Install packages {}", pkgs.join(", ")).as_str(),
+    );
+    // umount("/mnt/dev");
+}
+
+pub fn install_aur() {
+	os_eval(
+	exe_chroot!(
+		"bash",
+		"-c",
+		"git clone https://aur.archlinux.org/paru.git /tmp/paru && cd /tmp/paru && makepkg -si --noconfirm",
+	),
+	"Installing paru to access aur",
+	);
+}
+
 pub fn config_pacman() {
-    // TODO: paru
     os_eval(
         append_file("/etc/pacman.conf", "ParallelDownloads = 5"),
         "Setting pacman parralel download",
     );
     // Ranking the mirrors
     os_eval(
-        std::fs::copy(
+        fs::copy(
             "/etc/pacman.d/mirrorlist",
             "/etc/pacman.d/mirrorlist.backup",
         ),
@@ -35,13 +55,29 @@ pub fn config_pacman() {
     );
 }
 
+pub fn copy_pacman_conf() {
+	os_eval(
+		fs::copy(
+			"/etc/pacman.conf",
+			"/mnt/etc/pacman.conf"
+		).and_then(|_| fs::copy(
+				"/etc/pacman.d/mirrorlist",
+				"/mnt/etc/pacman/mirrorlist"
+		)),
+		"Copying pacman conf"
+	);
+
+}
+
 pub fn install_base_packages() {
     // TODO: microcode
-    std::fs::create_dir_all("/mnt/etc").unwrap();
+    fs::create_dir_all("/mnt/etc").unwrap();
     let kernel_to_install = "linux-hardened";
     install(vec![
         // Base Arch
         "base",
+        "base-devel",
+        "git",
         kernel_to_install,
         &format!("{}-headers", kernel_to_install),
         "archlinux-keyring",
@@ -80,14 +116,14 @@ pub fn genfstab() {
 }
 
 pub fn install_bootloader() {
-    // Custom hook to update bootloader
-    exe_chroot!("bootctl", "--path=/boot", "install");
-}
-
-pub fn install_paru() {
-    /*
-        git clone https://aur.archlinux.org/packages/paru/
-    cd paru
-    makepkg -si PKGBUILD
-    */
+	os_eval(
+		exe_chroot!("bootctl", "install"),
+		"Installing the bootloader",
+	);
+	let system_d_hook = include_str!("../../resources/etc_pacman_d_hooks_95-systemd-boot.hook");
+	let hook_path = "/mnt/etc/pacman.d/hooks/95-systemd-boot.hook";
+	os_eval(
+		fs::write(hook_path, system_d_hook),
+		"Creating hook to update the bootloader"
+	);
 }

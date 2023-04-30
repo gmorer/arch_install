@@ -3,7 +3,12 @@ mod functions;
 mod internal;
 mod logging;
 
-use crate::functions::*;
+use crate::functions::partition;
+use crate::functions::base;
+use crate::functions::locale;
+use crate::functions::network;
+use crate::functions::linux;
+
 pub use crate::internal::*;
 
 fn main() {
@@ -16,8 +21,11 @@ fn main() {
     // pacstrap
     base::config_pacman();
     base::install_base_packages();
+    base::copy_pacman_conf();
+    base::install_aur();
     // fstab
     base::genfstab();
+    base::install_bootloader();
     linux::install_zram();
     // locals
     locale::set_locale();
@@ -29,7 +37,6 @@ fn main() {
     network::enable_ipv6();
     // mkinitcpio
     // snapper
-    // systemd-boot
     // root passwd
     // pacman settings
 }

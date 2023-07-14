@@ -1,8 +1,41 @@
 use std::fs;
 use std::process::Command;
+use std::io::{ self, BufReader, BufRead };
+use regex::Regex;
+
 use crate::internal::exec::*;
 use crate::internal::files::append_file;
 use crate::internal::*;
+
+enum CpuVendor {
+    Amd,
+    Intel,
+}
+
+impl CpuVendor {
+    pub fn get() -> io::Result<Option<Self>>{
+        let amd_regex = Regex::new(r"^vendor_id\s*: AuthenticAMD$").unwrap();
+        let intel_regex = Regex::new(r"^vendor_id\s*: GenuineIntel$").unwrap();
+        let file = fs::File::open("/proc/cpuinfo")?;
+        let reader = BufReader::new(file).lines();
+        for line in reader {
+            if let Ok(line) = line {
+                if amd_regex.is_match(&line) {
+                    return Ok(Some(Self::Amd))
+                } else if intel_regex.is_match(&line) {
+                    return Ok(Some(Self::Intel))
+                }
+            }
+        }
+        Ok(None)
+    }
+    pub fn get_microde(&self) -> &'static str {
+        match self {
+            Self::Amd => "amd_ucode",
+            Self::Intel => "intel_ucode",
+        }
+    }
+}
 
 fn install(pkgs: Vec<&str>) {
     os_eval(
@@ -70,16 +103,16 @@ pub fn copy_pacman_conf() {
 }
 
 pub fn install_base_packages() {
-    // TODO: microcode
     fs::create_dir_all("/mnt/etc").unwrap();
     let kernel_to_install = "linux-hardened";
-    install(vec![
+    let headers = format!("{}-headers", kernel_to_install);
+    let mut to_install = vec![
         // Base Arch
         "base",
         "base-devel",
         "git",
         kernel_to_install,
-        &format!("{}-headers", kernel_to_install),
+        &headers,
         "archlinux-keyring",
         "zram-generator",
         "linux-firmware",
@@ -104,18 +137,15 @@ pub fn install_base_packages() {
         "zsh-syntax-highlighting",
         // Common packages for all desktops
         "flatpak",
-    ]);
-    files::copy_file("/etc/pacman.conf", "/mnt/etc/pacman.conf");
-}
-
-pub fn genfstab() {
-    os_eval(
-        exe!("bash", "-c", "genfstab -U /mnt >> /mnt/etc/fstab",),
-        "Generate fstab",
-    );
+    ];
+    if let Some(microcode) = CpuVendor::get().ok().flatten() {
+        to_install.push(microcode.get_microde());
+    }
+    install(to_install);
 }
 
 pub fn install_bootloader() {
+    // It take /efi has default
 	os_eval(
 		exe_chroot!("bootctl", "install"),
 		"Installing the bootloader",

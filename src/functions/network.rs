@@ -1,13 +1,11 @@
 use crate::internal::*;
+use crate::exec::exe_chroot;
 
 pub fn set_hostname() {
-    // TODO: ask the user
-    let hostname = "lol";
-    println!("Setting hostname to {}", hostname);
-    files::create_file("/mnt/etc/hostname");
-    files_eval(
-        files::append_file("/mnt/etc/hostname", hostname),
-        "set hostname",
+    let hostname = "laptop";
+    os_eval(
+        exe_chroot!("hostnamectl", "set-hostname" , hostname),
+        "Setting hostname"
     );
 }
 

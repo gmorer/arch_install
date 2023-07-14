@@ -2,7 +2,6 @@ use crate::internal::exec::*;
 use crate::internal::*;
 
 pub fn set_timezone() {
-    //TODO: -> curl -s http://ip-api.com/line?fields=timezone
     let timezone = "Europe/Paris";
     os_eval(
         exe_chroot!(
@@ -17,7 +16,6 @@ pub fn set_timezone() {
 }
 
 pub fn set_locale() {
-    // TODO
     let locale = "en_US.UTF-8 UTF-8";
     files_eval(
         files::append_file("/mnt/etc/locale.gen", "en_US.UTF-8 UTF-8"),

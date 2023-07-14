@@ -20,3 +20,4 @@ flexi_logger = {version = "0.22.3", features = ["colors"] }
 lazy_static = "1.4.0"
 human-panic = "1.0.3"
 rpassword = "7.2"
+regex = "1.9.1"

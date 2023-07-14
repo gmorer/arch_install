@@ -1,12 +1,22 @@
 use crate::internal::*;
+use std::str;
+use std::process::Output;
 
-pub fn exec_eval<D>(return_code: Result<std::process::ExitStatus, std::io::Error>, logmsg: D)
+pub fn exec_eval<D>(return_code: Result<Output, std::io::Error>, logmsg: D) -> Output
 where
     D: std::fmt::Display,
 {
-    match &return_code {
-        Ok(_) => {
-            log::info!("{}", logmsg);
+    match return_code {
+        Ok(output) => {
+            if output.status.success() {
+                log::info!("{}", logmsg);
+                output
+            } else {
+                match str::from_utf8(&output.stderr) {
+                    Ok(e) => crash(format!("{}  ERROR: {}", logmsg, e), 1),
+                    Err(_) => crash(format!("{}  ERROR: unreadable output", logmsg), 1)
+                }
+            }
         }
         Err(e) => {
             crash(

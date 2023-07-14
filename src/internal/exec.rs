@@ -1,4 +1,4 @@
-use std::process::{Command, Stdio};
+use std::process::{Command, Stdio, Output};
 
 macro_rules! exe {
 	($e:expr, $($argv:tt)*) => {{
@@ -35,14 +35,14 @@ pub(crate) use exe;
 pub(crate) use exe_chroot;
 pub(crate) use exe_io;
 
-pub fn exec<T>(command: &str, args: Vec<T>) -> Result<std::process::ExitStatus, std::io::Error>
+pub fn exec<T>(command: &str, args: Vec<T>) -> Result<Output, std::io::Error>
 where
     T: AsRef<std::ffi::OsStr>,
 {
-    Command::new(command).args(args).status()
+    Command::new(command).args(args).output()
 }
 
-pub fn execio<T>(command: &str, args: Vec<T>) -> Result<std::process::ExitStatus, std::io::Error>
+pub fn execio<T>(command: &str, args: Vec<T>) -> Result<Output, std::io::Error>
 where
     T: AsRef<std::ffi::OsStr>,
 {
@@ -50,14 +50,14 @@ where
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .args(args)
-        .status();
+        .output();
     returncode
 }
 
 pub fn exec_chroot<T>(
     command: &str,
     args: Vec<T>,
-) -> Result<std::process::ExitStatus, std::io::Error>
+) -> Result<Output, std::io::Error>
 where
     T: std::string::ToString,
 {
@@ -70,7 +70,7 @@ where
             "-c",
             format!("arch-chroot /mnt {} {}", command, args.join(" ")).as_str(),
         ])
-        .status();
+        .output();
     returncode
 }
 
@@ -78,13 +78,13 @@ pub fn exec_workdir<T>(
     command: &str,
     workdir: &str,
     args: Vec<T>,
-) -> Result<std::process::ExitStatus, std::io::Error>
+) -> Result<Output, std::io::Error>
 where
     T: AsRef<std::ffi::OsStr>,
 {
     let returncode = Command::new(command)
         .args(args)
         .current_dir(workdir)
-        .status();
+        .output();
     returncode
 }

@@ -10,7 +10,6 @@ use crate::internal::*;
 //
 // kernel.unprivileged_bpf_disabled=1
 //
-//
 // add btrfs to mkinitcpio binaries
 //
 // fix btrfs issue with async discard: /etc/tmpfiles.d/btrfs-discard.conf
@@ -28,8 +27,7 @@ pub fn install_zram() {
 }
 
 pub fn config_kernel_install() {
-	// man kernel_isntall(8)
-
+	// man kernel_install(8)
 }
 
 pub fn config_mkinitcpio() {

@@ -15,16 +15,23 @@ fn main() {
     human_panic::setup_panic!();
     logging::init(1);
 
+    let device = match std::env::args().nth(1) {
+        Some(device) => device,
+        None => {
+            eprintln!("Need to specify the device to install to as an arg");
+            return
+        }
+    };
+
     // checks
     // partition
-    partition::partition();
+    partition::partition(device);
     // pacstrap
     base::config_pacman();
     base::install_base_packages();
     base::copy_pacman_conf();
     base::install_aur();
-    // fstab
-    base::genfstab();
+
     base::install_bootloader();
     linux::install_zram();
     // locals

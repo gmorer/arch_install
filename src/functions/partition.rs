@@ -1,26 +1,58 @@
-use crate::internal::exec::{exe, exe_io, exec};
-use crate::internal::*;
 use std::path::PathBuf;
+use std::str;
+use regex::Regex;
 
 use files::create_directory as mkdir;
-
-// TODO: encryption :D
+use crate::internal::exec::{exe, exe_io, exec};
+use crate::internal::*;
 
 // Disk:
-// GPT: [ boot: fat32 1GiB ] [ LUKS2 1Gib..100% ]
+// GPT: [ efi: fat32 1GiB ] [ LUKS2 1Gib..100% ]
 // Luks2: [ Btrfs ]
-// Btrfs: [ [ @ ] [ @home ][ @snapshots ][ @var_log ][ @var_pkgs ][ @swap ] ]
+// Btrfs: [ [ @ ] [ @home ][ @snapshots ][ @var_log ][ @var_pkgs ][ @swap ] [@boot] ]
+//
+// TODO: automount via systemctl
 
-pub fn partition() {
-    // TODO: user input
-    let device = "".to_string();
+fn set_default_btrfs() {
+    let default_vol_regex = Regex::new("^ID .* path @$").unwrap();
+
+    let output = exec_eval(exe!("btrfs", "subvolume", "list", "/mnt"), "Getting the list of btrfs subvolume");
+    let output = match str::from_utf8(&output.stdout) {
+        Ok(out) => out,
+        Err(_) => crash("Fail to parse output of the btrfs command", 1)
+    };
+
+    /*
+     * Example output:
+     * ID 256 gen 85155 top level 5 path @
+     * ID 257 gen 85155 top level 5 path @home
+     * ID 258 gen 85155 top level 5 path @var_lo
+     */
+
+    for line in output.lines() {
+        if default_vol_regex.is_match(line) {
+            match line.split(" ").nth(1) {
+                Some(id) => {
+                    os_eval(
+                        exe!("btrfs", "subvolume", "set-default", id, "/"),
+                        "Setting default btrfs subvolume"
+                    );
+                },
+                None => crash("Fail to get btrfs default subvolum id", 1),
+            }
+        }
+    }
+
+}
+
+pub fn partition(device: String) {
     if !PathBuf::from(&device).exists() {
         crash(format!("The device {device:?} doesn't exist"), 1);
     }
     log::debug!("automatically partitioning {device:?}");
     let (esp, cryptroot) = create_table(device);
     let root = create_luks(&cryptroot);
-    part(esp, root);
+    part(&esp, root);
 }
 
 fn create_table(device: String) -> (String /* esp */, String /* cryptroot */) {
@@ -34,7 +66,7 @@ fn create_table(device: String) -> (String /* esp */, String /* cryptroot */) {
             /* Create GPT */
             "mklabel",
             "gpt",
-            /* Create boot partition */
+            /* Create efi partition */
             "mkpart",
             esp_label,
             "fat32",
@@ -68,7 +100,7 @@ fn create_luks(cryptroot: &str) -> String {
     println!("Enter password to create the encrypted container:");
     os_eval(
         // Using default options, should be ok
-        exe_io!("cryptsetup", "luksFormat", cryptroot),
+        exe_io!("cryptsetup", "luksFormat", "--type", "luks2", "--integrity", "hmac-sha256", cryptroot),
         "Creating the luks2 container for root",
     );
     println!("Enter password to enter the encrypted container (same as before):");
@@ -98,11 +130,11 @@ fn create_btrfs_su(mountpoint: &str) {
     );
 }
 
-fn part(boot: String, btrfs: String) {
-    // Boot partition
+fn part(esp: &str, btrfs: String) {
+    // Efi partition
     os_eval(
-        exe!("mkfs.vfat", "-F32", &boot),
-        format!("format {} as fat32", boot),
+        exe!("mkfs.vfat", "-F32", esp),
+        format!("format {} as fat32", esp),
     );
     // /
     os_eval(
@@ -132,11 +164,9 @@ fn part(boot: String, btrfs: String) {
         os_eval(mkdir(&mounted_path), format!("create {}", mounted_path));
         mount_btrfs_su(label, &btrfs, &mounted_path);
     }
-    // TODO:
-    // make / default
-	// btrfs subvolume set-default subvolume-id /
 
-    // Since 6.1 :D
+    set_default_btrfs();
+
     let swapfile = "/mnt/swap/swapfile";
     os_eval(
         exe!(
@@ -151,8 +181,9 @@ fn part(boot: String, btrfs: String) {
     );
     os_eval(exe!("swapon", swapfile), format!("swapon {}", swapfile));
 
-    os_eval(mkdir("/mnt/boot/efi"), "create /mnt/boot/efi");
-    mount(&boot, "/mnt/boot/efi", None);
+    os_eval(mkdir("/mnt/boot"), "create /mnt/boot");
+    os_eval(mkdir("/mnt/efi"), "create /mnt/efi");
+    mount(esp, "/mnt/efi", None);
 }
 
 pub fn mount(partition: &str, mountpoint: &str, options: Option<&str>) {
